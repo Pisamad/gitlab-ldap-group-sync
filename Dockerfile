@@ -1,14 +1,18 @@
-FROM node:7.8.0
+FROM alpine
 
-MAINTAINER Stefan Jauker
+RUN apk add nodejs npm python make
 
 ENV NODE_ENV production
 
-WORKDIR /opt/gitlab_ldap_group_sync
-COPY . /opt/gitlab_ldap_group_sync
+WORKDIR /app
+COPY ./bin /app/bin
+COPY ./routes /app/routes
+COPY ./config /app/config
+COPY ./*.js /app/
+COPY ./*.json /app/
 
-RUN npm prune && npm install
+RUN npm install
 
 CMD ["node", "./bin/www"]
 
-EXPOSE 8080
+EXPOSE 80

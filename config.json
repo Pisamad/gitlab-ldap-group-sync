@@ -1,0 +1,19 @@
+{
+  "port": 8080,
+  "syncInterval": "10m",
+  "gitlab": {
+    "api": "http://gitlab.sli.local/api/v4",
+    "privateToken": "NzLKTQm45yFKeMiYJoGK"
+  },
+  "ldap": {
+    "url": "ldap://HQSLIDC01.sli.local",
+    "baseDN": "DC=sli,DC=local",
+    "username": "s-gitlab@sli.local",
+    "password": "0QIibLBOYIQOQ3iNcf6C"
+  },
+  "groupPrefix": "gitlab-",
+  "ownersGroups": "admins",
+  "ownerAccessLevel": 50,
+  "defaultAccessLevel": 30
+
+}
