@@ -3,7 +3,7 @@ var router = express.Router();
 
 /* GET users listing. */
 router.post('/webhook', function (req, res) {
-  console.log(req);
+  console.log('Event : ', req.body.event_name);
   if (req.body.event_name === 'user_create') {
     gitlabLdapGroupSync.sync();
     res.status(200).send('OK');
