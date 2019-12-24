@@ -4,7 +4,7 @@ var getenv = require('getenv');
 
 var config = {};
 try {
-  config = require('./config');
+  config = require('./config/config');
 } catch (err) {
   console.log('no config file found');
 }
