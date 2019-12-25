@@ -18,14 +18,13 @@ if (result.errors.length > 0) {
   process.exit(1);
 }
 
-var gitlabLdapGroupSync = new require('./gitlabLdapGroupSync')(config);
+var gitlabLdapGroupSync = new require('./actions/gitlabLdapGroupSync')(config);
 gitlabLdapGroupSync.startScheduler(config.syncInterval || '1h');
 gitlabLdapGroupSync.sync();
 
 /// EXPRESS
 var express = require('express');
 var bodyParser = require('body-parser')
-var path = require('path');
 var logger = require('morgan');
 
 var routes = require('./routes/index');
