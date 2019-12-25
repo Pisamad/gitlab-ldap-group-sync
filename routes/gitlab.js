@@ -1,7 +1,7 @@
 var express = require('express');
 var router = express.Router();
 
-/* GET users listing. */
+/* Gitlab event post hook. */
 router.post('/webhook', function (req, res) {
   console.log('Event : ', req.body.event_name);
   if (req.body.event_name === 'user_create') {
@@ -10,6 +10,13 @@ router.post('/webhook', function (req, res) {
   } else {
     res.status(422).send('This is not a valid gitlab system hook');
   }
+});
+
+/* Do sync */
+router.get('/dosync', function (req, res) {
+  console.log('Do sync requested');
+  gitlabLdapGroupSync.sync();
+  res.status(200).send('OK');
 });
 
 module.exports = router;
