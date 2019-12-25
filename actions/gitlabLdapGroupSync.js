@@ -1,191 +1,195 @@
-var co = require('co');
-var every = require('schedule').every;
-var ActiveDirectory = require('activedirectory');
-var NodeGitlab = require('node-gitlab');
+const co = require('co')
+const every = require('schedule').every
+const ActiveDirectory = require('activedirectory')
+const NodeGitlab = require('node-gitlab')
 
-module.exports = GitlabLdapGroupSync;
+module.exports = GitlabLdapGroupSync
 
-var isRunning = false;
-var gitlab = undefined;
-var ldap = undefined;
-var ldapGroupPrefix = undefined;
+let isRunning = false
+let gitlab = undefined
+let ldap = undefined
+let ldapGroupPrefix = undefined
 
-function GitlabLdapGroupSync(config) {
+function GitlabLdapGroupSync (config) {
   if (!(this instanceof GitlabLdapGroupSync))
     return new GitlabLdapGroupSync(config)
 
-  ldapGroupPrefix = config.ldapGroupPrefix || 'gitlab-';
-  gitlab = NodeGitlab.createThunk(config.gitlab);
-  ldap = new ActiveDirectory(config.ldap);
+  ldapGroupPrefix = config.ldapGroupPrefix || 'gitlab-'
+  gitlab = NodeGitlab.createThunk(config.gitlab)
+  ldap = new ActiveDirectory(config.ldap)
 
 }
 
 GitlabLdapGroupSync.prototype.sync = function () {
   if (isRunning) {
-    console.log('ignore trigger, a sync is already running');
-    return;
+    console.log('ignore trigger, a sync is already running')
+    return
   }
-  isRunning = true;
+  isRunning = true
 
   co(function* () {
     // find all users with a ldap identiy
-    var gitlabUsers = [];
-    var pagedUsers = [];
-    var i = 0;
+    let gitlabUsers = []
+    let pagedUsers = []
+    let i = 0
     do {
-      i++;
-      pagedUsers = yield gitlab.users.list({ per_page: 100, page: i });
-      gitlabUsers.push.apply(gitlabUsers, pagedUsers);
-    } while (pagedUsers.length == 100);
+      i++
+      pagedUsers = yield gitlab.users.list({per_page: 100, page: i})
+      gitlabUsers.push.apply(gitlabUsers, pagedUsers)
+    } while (pagedUsers.length == 100)
 
-    var gitlabUserMap = {};
-    var gitlabLocalUserIds = [];
-    for (var user of gitlabUsers) {
+    let gitlabUserMap = {}
+    let gitlabLocalUserIds = []
+    for (let user of gitlabUsers) {
       if (user.identities.length > 0) {
         // gitlabUserMap[user.identities[0].extern_uid] = user.id
-        gitlabUserMap[user.username.toLowerCase()] = user.id;
+        gitlabUserMap[user.username.toLowerCase()] = user.id
       } else {
-        gitlabLocalUserIds.push(user.id);
+        gitlabLocalUserIds.push(user.id)
       }
     }
-    console.log('Remote GitLab users : ', gitlabUserMap);
-    console.log('Local  GitLab users : ', gitlabLocalUserIds);
+    console.log('Remote GitLab users : ', gitlabUserMap)
+    console.log('Local  GitLab users : ', gitlabLocalUserIds)
 
     //get all ldap groups and create a map with gitlab userid;
-    var ldapGroups = yield getAllLdapGroups(ldap);
-    var groupMembers = {};
-    for (var ldapGroup of ldapGroups) {
-      groupMembers[ldapGroup.cn.replace(ldapGroupPrefix, '')] = yield resolveLdapGroupMembers(ldap, ldapGroup, gitlabUserMap);
+    let ldapGroups = yield getAllLdapGroups(ldap)
+    let grpMembers = {}
+    for (let ldapGroup of ldapGroups) {
+      grpMembers[ldapGroup.cn.replace(ldapGroupPrefix, '')] = yield resolveLdapGroupMembers(ldap, ldapGroup, gitlabUserMap)
     }
-    console.log('Group Members : ', groupMembers);
+    console.log('Group Members : ', grpMembers)
 
     //set the gitlab group members based on ldap group
-    var gitlabGroups = [];
-    var pagedGroups = [];
-    var i = 0;
+    let gitlabGroups = []
+    let pagedGroups = []
+    let i = 0
     do {
-      i++;
-      pagedGroups = yield gitlab.groups.list({ per_page: 100, page: i });
-      gitlabGroups.push.apply(gitlabGroups, pagedGroups);
-    } while (pagedGroups.length == 100);
+      i++
+      pagedGroups = yield gitlab.groups.list({per_page: 100, page: i})
+      gitlabGroups.push.apply(gitlabGroups, pagedGroups)
+    } while (pagedGroups.length == 100)
 
-    for (var gitlabGroup of gitlabGroups) {
-      console.log('-------------------------');
-      console.log('group:', gitlabGroup.name);
-      var gitlabGroupMembers = [];
-      var pagedGroupMembers = [];
-      var i = 0;
+    for (let gitlabGroup of gitlabGroups) {
+      console.log('-------------------------')
+      console.log('group:', gitlabGroup.name)
+      let gitlabGroupMembers = []
+      let pagedGroupMembers = []
+      let i = 0
       do {
-        i++;
-        pagedGroupMembers = yield gitlab.groupMembers.list({ id: gitlabGroup.id, per_page: 100, page: i });
-        gitlabGroupMembers.push.apply(gitlabGroupMembers, pagedGroupMembers);
-      } while (pagedGroupMembers.length == 100);
+        i++
+        pagedGroupMembers = yield gitlab.groupMembers.list({id: gitlabGroup.id, per_page: 100, page: i})
+        gitlabGroupMembers.push.apply(gitlabGroupMembers, pagedGroupMembers)
+      } while (pagedGroupMembers.length == 100)
 
-      var currentMemberIds = [];
-      for (var member of gitlabGroupMembers) {
+      let currentMemberIds = []
+      for (let member of gitlabGroupMembers) {
         if (gitlabLocalUserIds.indexOf(member.id) > -1) {
-          continue; //ignore local users
+          continue //ignore local users
         }
 
-        var access_level = accessLevel(groupMembers);
+        let access_level = accessLevel(grpMembers)
         if (member.access_level !== access_level) {
-          console.log('update group member permission', { id: gitlabGroup.id, user_id: member.id, access_level: access_level });
-          gitlab.groupMembers.update({ id: gitlabGroup.id, user_id: member.id, access_level: access_level });
+          console.log('update group member permission', {
+            id: gitlabGroup.id,
+            user_id: member.id,
+            access_level: access_level
+          })
+          gitlab.groupMembers.update({id: gitlabGroup.id, user_id: member.id, access_level: access_level})
         }
 
-        currentMemberIds.push(member.id);
+        currentMemberIds.push(member.id)
       }
 
-      var members = groupMembers[gitlabGroup.name] || groupMembers[gitlabGroup.path] || groupMembers['default'] || [];
+      let members = grpMembers[gitlabGroup.name] || grpMembers[gitlabGroup.path] || grpMembers['default'] || []
 
       //remove unlisted users
-      var toDeleteIds = currentMemberIds.filter(x => members.indexOf(x) == -1);
-      for (var id of toDeleteIds) {
-        console.log('delete group member', { id: gitlabGroup.id, user_id: id });
-        gitlab.groupMembers.remove({ id: gitlabGroup.id, user_id: id });
+      let toDeleteIds = currentMemberIds.filter(x => members.indexOf(x) == -1)
+      for (let id of toDeleteIds) {
+        console.log('delete group member', {id: gitlabGroup.id, user_id: id})
+        gitlab.groupMembers.remove({id: gitlabGroup.id, user_id: id})
       }
 
       //add new users
-      var toAddIds = members.filter(x => currentMemberIds.indexOf(x) == -1);
-      for (var id of toAddIds) {
-        var access_level = accessLevel(groupMembers);
-        console.log('add group member', { id: gitlabGroup.id, user_id: id, access_level: access_level });
-        gitlab.groupMembers.create({ id: gitlabGroup.id, user_id: id, access_level: access_level });
+      let toAddIds = members.filter(x => currentMemberIds.indexOf(x) == -1)
+      for (let id of toAddIds) {
+        let access_level = accessLevel(grpMembers)
+        console.log('add group member', {id: gitlabGroup.id, user_id: id, access_level: access_level})
+        gitlab.groupMembers.create({id: gitlabGroup.id, user_id: id, access_level: access_level})
       }
 
       // Suppress treated ldap group
-      delete groupMembers[gitlabGroup.name]
+      delete grpMembers[gitlabGroup.name]
     }
 
     // Create reminder group in LDAP
-    for (var groupName in groupMembers) {
+    for (let groupName in grpMembers) {
       console.log('add group : ', groupName)
-      var newgitlabGroup = yield gitlab.groups.create({ name: groupName, path: groupName, visibility: 'private' });
-      for (var id of groupMembers[groupName]) {
-        var access_level = accessLevel(groupMembers);
-        console.log('add group member', { id: newgitlabGroup.id, user_id: id, access_level: access_level });
-        gitlab.groupMembers.create({ id: newgitlabGroup.id, user_id: id, access_level: access_level });
+      let newgitlabGroup = yield gitlab.groups.create({name: groupName, path: groupName, visibility: 'private'})
+      for (let id of grpMembers[groupName]) {
+        let access_level = accessLevel(grpMembers)
+        console.log('add group member', {id: newgitlabGroup.id, user_id: id, access_level: access_level})
+        gitlab.groupMembers.create({id: newgitlabGroup.id, user_id: id, access_level: access_level})
       }
     }
 
   }).then(function (value) {
-    console.log('sync done');
-    isRunning = false;
+    console.log('sync done')
+    isRunning = false
   }, function (err) {
-    console.error(err.stack);
-  });
+    console.error(err.stack)
+  })
 }
 
-var ins = undefined;
+let ins = undefined
 
 GitlabLdapGroupSync.prototype.startScheduler = function (interval) {
-  this.stopScheduler();
-  ins = every(interval).do(this.sync);
+  this.stopScheduler()
+  ins = every(interval).do(this.sync)
 }
 
 GitlabLdapGroupSync.prototype.stopScheduler = function () {
   if (ins) {
-    ins.stop();
+    ins.stop()
   }
-  ins = undefined;
+  ins = undefined
 }
 
-function getAllLdapGroups(ldap) {
+function getAllLdapGroups (ldap) {
   return new Promise(function (resolve, reject) {
     ldap.findGroups('CN=' + ldapGroupPrefix + '*', function (err, groups) {
       if (err) {
-        reject(err);
-        return;
+        reject(err)
+        return
       }
-      resolve(groups);
-    });
-  });
+      resolve(groups)
+    })
+  })
 }
 
-function resolveLdapGroupMembers(ldap, group, gitlabUserMap) {
+function resolveLdapGroupMembers (ldap, group, gitlabUserMap) {
   return new Promise(function (resolve, reject) {
-    var ldapGroups = {};
     ldap.getUsersForGroup(group.cn, function (err, users) {
       if (err) {
-        reject(err);
-        return;
+        reject(err)
+        return
       }
 
-      groupMembers = [];
-      for (var user of users) {
-        if (gitlabUserMap[user.sAMAccountName.toLowerCase()]) {
-          groupMembers.push(gitlabUserMap[user.sAMAccountName.toLowerCase()]);
+      let members = []
+      for (let user of users) {
+        let sAMAccountName = user.sAMAccountName.toLowerCase()
+        if (gitlabUserMap[sAMAccountName]) {
+          members.push(gitlabUserMap[sAMAccountName])
         }
       }
-      resolve(groupMembers);
-    });
-  });
+      resolve(members)
+    })
+  })
 }
 
-function accessLevel(groupMembers) {
-  if (groupMembers['admins'] === undefined) {
-    return 40;
+function accessLevel (grpMembers) {
+  if (grpMembers['admins'] === undefined) {
+    return 40
   } else {
-    return groupMembers['admins'].indexOf(id) > -1 ? 40 : 30;
+    return grpMembers['admins'].indexOf(id) > -1 ? 40 : 30
   }
 }
