@@ -21,7 +21,6 @@ function GitlabLdapGroupSync(config) {
   ldapGroupPrefix = config.ldapGroupPrefix || 'gitlab-'
   gitlab = NodeGitlab.createThunk(config.gitlab)
   ldap = new ActiveDirectory(config.ldap)
-
 }
 
 GitlabLdapGroupSync.prototype.sync = function () {
@@ -93,7 +92,7 @@ GitlabLdapGroupSync.prototype.sync = function () {
 
         let access_level = accessLevel(gitlabGroup.id, grpMembers)
         if (member.access_level !== access_level) {
-          logger.info('update group member permission', { id: gitlabGroup.id, user_id: member.id, access_level: access_level })
+          logger.info('update group member permission', { group: gitlabGroup.name, user: member.name, access_level: access_level })
           gitlab.groupMembers.update({ id: gitlabGroup.id, user_id: member.id, access_level: access_level })
         }
 
@@ -105,7 +104,7 @@ GitlabLdapGroupSync.prototype.sync = function () {
       //remove unlisted users
       let toDeleteIds = currentMemberIds.filter(x => members.indexOf(x) == -1)
       for (let id of toDeleteIds) {
-        logger.info('delete group member', { id: gitlabGroup.id, user_id: id })
+        logger.info('delete group member', { group: gitlabGroup.name, user: members[id] })
         gitlab.groupMembers.remove({ id: gitlabGroup.id, user_id: id })
       }
 
@@ -113,7 +112,7 @@ GitlabLdapGroupSync.prototype.sync = function () {
       let toAddIds = members.filter(x => currentMemberIds.indexOf(x) == -1)
       for (let id of toAddIds) {
         let access_level = accessLevel(gitlabGroup.id, grpMembers)
-        logger.info('add group member', { id: gitlabGroup.id, user_id: id, access_level: access_level })
+        logger.info('add group member', { group: gitlabGroup.name, user: members[id], access_level: access_level })
         gitlab.groupMembers.create({ id: gitlabGroup.id, user_id: id, access_level: access_level })
       }
 
@@ -127,8 +126,8 @@ GitlabLdapGroupSync.prototype.sync = function () {
       let newgitlabGroup = yield gitlab.groups.create({ name: groupName, path: groupName, visibility: 'private' })
       for (let id of grpMembers[groupName]) {
         let access_level = accessLevel(newgitlabGroup.id, grpMembers)
-        logger.info('add group member', { id: newgitlabGroup.id, user_id: id, access_level: access_level })
-        gitlab.groupMembers.create({ id: newgitlabGroup.id, user_id: id, access_level: access_level })
+        logger.info('add group member', { group: newgitlabGroup.name, user_id: id, access_level: access_level })
+        gitlab.groupMembers.create({ group: newgitlabGroup.name, user_id: id, access_level: access_level })
       }
     }
 
