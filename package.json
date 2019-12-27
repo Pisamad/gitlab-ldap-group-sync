@@ -16,6 +16,7 @@
     "jsonschema": "latest",
     "morgan": "latest",
     "node-gitlab": "latest",
-    "schedule": "0.1.0"
+    "schedule": "0.1.0",
+    "logger": "latest"
   }
 }
