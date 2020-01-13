@@ -1,0 +1,20 @@
+[Unit]
+Description=Gitlab LDAP Group Syns service
+After=docker.service
+Requires=docker.service
+
+[Service]
+TimeoutStartSec=0
+Restart=always
+ExecStartPre=-/usr/bin/docker exec %n stop
+ExecStartPre=-/usr/bin/docker rm %n
+ExecStartPre=/usr/bin/docker load -i /opt/gitlab_ldap_group_sync/%n.tar
+ExecStart=/usr/bin/docker run --rm --name %n \
+  -v /opt/gitlab_ldap_group_sync/actions:/app/actions \
+  -v /opt/gitlab_ldap_group_sync/config:/app/config \
+  -v /opt/gitlab_ldap_group_sync/log:/app/log \
+  -p 8000:80 \
+  %n
+
+[Install]
+WantedBy=default.target
