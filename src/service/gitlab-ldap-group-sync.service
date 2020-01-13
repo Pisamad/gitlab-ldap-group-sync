@@ -1,0 +1,15 @@
+[Unit]
+Description=GitLab LDAP Group Sync
+After=syslog.target network.target docker.service
+ConditionFileIsExecutable=/opt/gitlab_ldap_group_sync/gitlab-ldap-group-sync
+
+[Service]
+StartLimitInterval=5
+StartLimitBurst=10
+ExecStart=/opt/gitlab_ldap_group_sync/gitlab-ldap-group-sync
+
+Restart=always
+RestartSec=120
+
+[Install]
+WantedBy=multi-user.target
