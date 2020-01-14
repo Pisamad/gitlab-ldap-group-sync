@@ -1,3 +1,11 @@
+/**
+ */ 
+const GuestAccessLevel = 10
+const ReporterAccessLevel = 20
+const DeveloperAccessLevel = 30
+const MaintainerAccessLevel = 40
+const OwnerAccessLevel = 50
+
 const co = require('co')
 const every = require('schedule').every
 const ActiveDirectory = require('activedirectory')
@@ -59,7 +67,18 @@ GitlabLdapGroupSync.prototype.sync = function () {
     let ldapGroups = yield getAllLdapGroups(ldap)
     let grpMembers = {}
     for (let ldapGroup of ldapGroups) {
-      grpMembers[ldapGroup.cn.replace(ldapGroupPrefix, '')] = yield resolveLdapGroupMembers(ldap, ldapGroup, gitlabUserMap)
+      const regex = `/^${config.ldapGroupPrefix}-(.+)-(rw|r|a)$/`;
+      const found = ldapGroup.cn.match(regex);
+      if (found) {
+        const level = found[2]
+        const groupName = found[1]
+        if (grpMembers[groupName] === undefined) grpMembers[groupName] = {}
+        grpMembers[groupName][level] = yield resolveLdapGroupMembers(ldap, ldapGroup, gitlabUserMap)
+        grpMembers[groupName]['all'] = grpMembers[groupName][level]
+      } else if (ldapGroupPrefix.cn === `${config.ldapGroupPrefix}-admins`) {
+        if (grpMembers['admins'] === undefined) grpMembers['admins'] = {}
+        grpMembers['admins']['all'] = yield resolveLdapGroupMembers(ldap, ldapGroup, gitlabUserMap)
+      }
     }
     console.log('Group Members : ', grpMembers)
 
@@ -91,7 +110,7 @@ GitlabLdapGroupSync.prototype.sync = function () {
           continue //ignore local users
         }
 
-        let access_level = accessLevel(gitlabGroup.id, grpMembers)
+        let access_level = accessLevel(member.id, grpMembers[gitlabGroup.name])
         if (member.access_level !== access_level) {
           logger.info('update group member permission', { id: gitlabGroup.id, user_id: member.id, access_level: access_level })
           gitlab.groupMembers.update({ id: gitlabGroup.id, user_id: member.id, access_level: access_level })
@@ -100,7 +119,7 @@ GitlabLdapGroupSync.prototype.sync = function () {
         currentMemberIds.push(member.id)
       }
 
-      let members = grpMembers[gitlabGroup.name] || grpMembers[gitlabGroup.path] || grpMembers['default'] || []
+      let members = (grpMembers[gitlabGroup.name] || grpMembers[gitlabGroup.path] || grpMembers['default'] || {all:[]}).all
 
       //remove unlisted users
       let toDeleteIds = currentMemberIds.filter(x => members.indexOf(x) == -1)
@@ -112,21 +131,21 @@ GitlabLdapGroupSync.prototype.sync = function () {
       //add new users
       let toAddIds = members.filter(x => currentMemberIds.indexOf(x) == -1)
       for (let id of toAddIds) {
-        let access_level = accessLevel(gitlabGroup.id, grpMembers)
+        let access_level = accessLevel(id, grpMembers[gitlabGroup.name])
         logger.info('add group member', { id: gitlabGroup.id, user_id: id, access_level: access_level })
         gitlab.groupMembers.create({ id: gitlabGroup.id, user_id: id, access_level: access_level })
       }
 
       // Suppress treated ldap group
-      delete grpMembers[gitlabGroup.name]
+      delete grpMembers.all[gitlabGroup.name]
     }
 
     // Create reminder group in LDAP
-    for (let groupName in grpMembers) {
+    for (let groupName in grpMembers.all) {
       logger.info('add group : ', groupName)
       let newgitlabGroup = yield gitlab.groups.create({ name: groupName, path: groupName, visibility: 'private' })
-      for (let id of grpMembers[groupName]) {
-        let access_level = accessLevel(newgitlabGroup.id, grpMembers)
+      for (let id of grpMembers.all[groupName]) {
+        let access_level = accessLevel(id, grpMembers[gitlabGroup.name])
         logger.info('add group member', { id: newgitlabGroup.id, user_id: id, access_level: access_level })
         gitlab.groupMembers.create({ id: newgitlabGroup.id, user_id: id, access_level: access_level })
       }
@@ -187,9 +206,8 @@ function resolveLdapGroupMembers(ldap, group, gitlabUserMap) {
 }
 
 function accessLevel(id, grpMembers) {
-  if (grpMembers['admins'] === undefined) {
-    return 40
-  } else {
-    return grpMembers['admins'].indexOf(id) > -1 ? 40 : 30
-  }
+  if (grpMembers['admins'].indexOf(id) != -1) return OwnerAccessLevel
+  if (grpMembers['a'].indexOf(id) != -1) return OwnerAccessLevel
+  if (grpMembers['rw'].indexOf(id) != -1) return MaintainerAccessLevel
+  if (grpMembers['r'].indexOf(id) != -1) return GuestAccessLevel  
 }
