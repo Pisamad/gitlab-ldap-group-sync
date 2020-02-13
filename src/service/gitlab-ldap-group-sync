@@ -2,7 +2,7 @@
 
 #DSK=$PWD
 DSK=/opt/gitlab_ldap_group_sync
-ACT_DSK="-v $DSK/actions:/app/actions"
+#ACT_DSK="-v $DSK/actions:/app/actions"
 CFG_DSK="-v $DSK/config:/app/config"
 LOG_DSK="-v $DSK/log:/app/log"
 

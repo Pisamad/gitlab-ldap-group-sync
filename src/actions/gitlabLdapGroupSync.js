@@ -6,6 +6,7 @@ const logger = require('logger').createLogger('./log/gitlabLdapGroupSync.log')
 logger.format = function (level, date, message) {
   return date.toISOString() + ' - ' + level + ' - ' + message
 }
+process.env['NODE_TLS_REJECT_UNAUTHORIZED'] = 0
 
 module.exports = GitlabLdapGroupSync
 
