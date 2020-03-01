@@ -1,5 +1,5 @@
 // Read config
-const configSchema = require('./config.schema')
+const configSchema = require('./config/config.schema')
 const validate = require('jsonschema').validate
 const getenv = require('getenv')
 
