@@ -11,9 +11,13 @@ const every = require('schedule').every
 const ActiveDirectory = require('activedirectory')
 const NodeGitlab = require('node-gitlab')
 const logger = require('logger').createLogger('./log/gitlabLdapGroupSync.log')
+//const logger = require('logger').createLogger()
 logger.format = function (level, date, message) {
   return date.toISOString() + ' - ' + level + ' - ' + message
 }
+logger.info = console.log
+
+process.env['NODE_TLS_REJECT_UNAUTHORIZED'] = 0
 
 module.exports = GitlabLdapGroupSync
 
@@ -29,7 +33,6 @@ function GitlabLdapGroupSync(config) {
   ldapGroupPrefix = config.ldapGroupPrefix || 'gitlab-'
   gitlab = NodeGitlab.createThunk(config.gitlab)
   ldap = new ActiveDirectory(config.ldap)
-
 }
 
 GitlabLdapGroupSync.prototype.sync = function () {
@@ -66,19 +69,22 @@ GitlabLdapGroupSync.prototype.sync = function () {
     //get all ldap groups and create a map with gitlab userid;
     let ldapGroups = yield getAllLdapGroups(ldap)
     let grpMembers = {}
+    const regex = new RegExp(`^${ldapGroupPrefix}(.+)-(rw|r|a)$`);
     for (let ldapGroup of ldapGroups) {
-      const regex = `/^${config.ldapGroupPrefix}-(.+)-(rw|r|a)$/`;
       const found = ldapGroup.cn.match(regex);
+      let level = 'a'
+      let groupName = 'admins'
       if (found) {
-        const level = found[2]
-        const groupName = found[1]
-        if (grpMembers[groupName] === undefined) grpMembers[groupName] = {}
-        grpMembers[groupName][level] = yield resolveLdapGroupMembers(ldap, ldapGroup, gitlabUserMap)
-        grpMembers[groupName]['all'] = grpMembers[groupName][level]
-      } else if (ldapGroupPrefix.cn === `${config.ldapGroupPrefix}-admins`) {
-        if (grpMembers['admins'] === undefined) grpMembers['admins'] = {}
-        grpMembers['admins']['all'] = yield resolveLdapGroupMembers(ldap, ldapGroup, gitlabUserMap)
-      }
+        level = found[2]
+        groupName = found[1]
+      } 
+      if (grpMembers[groupName] === undefined) grpMembers[groupName] = {}
+      if (grpMembers[groupName]['a'] === undefined) grpMembers[groupName]['a'] = []
+      if (grpMembers[groupName]['rw'] === undefined) grpMembers[groupName]['rw'] = []
+      if (grpMembers[groupName]['r'] === undefined) grpMembers[groupName]['r'] = []
+      if (grpMembers[groupName]['all'] === undefined) grpMembers[groupName]['all'] = []
+      grpMembers[groupName][level] = yield resolveLdapGroupMembers(ldap, ldapGroup, gitlabUserMap)
+      grpMembers[groupName]['all'] = grpMembers[groupName]['all'].concat(grpMembers[groupName][level])
     }
     console.log('Group Members : ', grpMembers)
 
@@ -95,6 +101,8 @@ GitlabLdapGroupSync.prototype.sync = function () {
     for (let gitlabGroup of gitlabGroups) {
       console.log('-------------------------')
       console.log('group:', gitlabGroup.name)
+      if (grpMembers[gitlabGroup.name] === undefined) grpMembers[gitlabGroup.name] = {a:[],rw:[],r:[],all:[]}
+      
       let gitlabGroupMembers = []
       let pagedGroupMembers = []
       let i = 0
@@ -112,8 +120,10 @@ GitlabLdapGroupSync.prototype.sync = function () {
 
         let access_level = accessLevel(member.id, grpMembers[gitlabGroup.name])
         if (member.access_level !== access_level) {
-          logger.info('update group member permission', { id: gitlabGroup.id, user_id: member.id, access_level: access_level })
-          gitlab.groupMembers.update({ id: gitlabGroup.id, user_id: member.id, access_level: access_level })
+          if (access_level !== null){
+            logger.info('update group member permission', { id: gitlabGroup.id, user_id: member.id, access_level: access_level })
+            gitlab.groupMembers.update({ id: gitlabGroup.id, user_id: member.id, access_level: access_level })
+          }
         }
 
         currentMemberIds.push(member.id)
@@ -137,15 +147,16 @@ GitlabLdapGroupSync.prototype.sync = function () {
       }
 
       // Suppress treated ldap group
-      delete grpMembers.all[gitlabGroup.name]
+      delete grpMembers[gitlabGroup.name]
     }
 
     // Create reminder group in LDAP
-    for (let groupName in grpMembers.all) {
+    for (let groupName in grpMembers) {
+      console.log('-------------------------')
       logger.info('add group : ', groupName)
       let newgitlabGroup = yield gitlab.groups.create({ name: groupName, path: groupName, visibility: 'private' })
-      for (let id of grpMembers.all[groupName]) {
-        let access_level = accessLevel(id, grpMembers[gitlabGroup.name])
+      for (let id of grpMembers[groupName].all) {
+        let access_level = accessLevel(id, grpMembers[groupName])
         logger.info('add group member', { id: newgitlabGroup.id, user_id: id, access_level: access_level })
         gitlab.groupMembers.create({ id: newgitlabGroup.id, user_id: id, access_level: access_level })
       }
@@ -206,8 +217,8 @@ function resolveLdapGroupMembers(ldap, group, gitlabUserMap) {
 }
 
 function accessLevel(id, grpMembers) {
-  if (grpMembers['admins'].indexOf(id) != -1) return OwnerAccessLevel
-  if (grpMembers['a'].indexOf(id) != -1) return OwnerAccessLevel
-  if (grpMembers['rw'].indexOf(id) != -1) return MaintainerAccessLevel
+  if (grpMembers['a'].indexOf(id) != -1) return MaintainerAccessLevel
+  if (grpMembers['rw'].indexOf(id) != -1) return DeveloperAccessLevel
   if (grpMembers['r'].indexOf(id) != -1) return GuestAccessLevel  
+  return null
 }
